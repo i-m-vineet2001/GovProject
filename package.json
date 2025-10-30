@@ -1,4 +1,10 @@
 {
+  "name": "govproject-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node start.js"
+  },
   "dependencies": {
     "@prisma/client": "^6.18.0",
     "@prisma/extension-accelerate": "^2.0.2",
