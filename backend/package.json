@@ -2,6 +2,9 @@
   "name": "govproject-backend",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "seed:csv": "node ./seedCsvToPrisma.js"
+  },
   "dependencies": {
     "@prisma/client": "^6.18.0",
     "@prisma/extension-accelerate": "^2.0.2",
