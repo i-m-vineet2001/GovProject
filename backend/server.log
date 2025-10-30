@@ -1,0 +1,2 @@
+prisma:warn In production, we recommend using `prisma generate --no-engine` (See: `prisma generate --help`)
+Server running on port 3001
