@@ -1,8 +1,98 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 import { prisma } from "../db.js";
 import { fetchAndStoreData } from "../fetchData.js";
 import { seedFromCsv } from "../seedCsvToPrisma.js";
 const router = express.Router();
+
+// CSV fallback helper: parse the provided CSV file into rows the API can use
+const CSV_PATH = path.join(process.cwd(), "backend", "govproject dataset.csv");
+
+function finMonthToIso(finYear, monthStr) {
+  // finYear like "2024-2025", monthStr like "Dec" or "July" or numeric-like
+  const months = {
+    Jan: 1,
+    Feb: 2,
+    Mar: 3,
+    Apr: 4,
+    May: 5,
+    Jun: 6,
+    Jul: 7,
+    July: 7,
+    Aug: 8,
+    Sep: 9,
+    Sept: 9,
+    Oct: 10,
+    Nov: 11,
+    Dec: 12,
+  };
+  // fallback: try numeric
+  let m = months[monthStr] || Number(monthStr);
+  if (!m || Number.isNaN(m)) return null;
+  const [start, end] = finYear.split("-");
+  const startYear = Number(start);
+  // fiscal year Apr-Dec -> start year, Jan-Mar -> end year
+  const year = m >= 4 && m <= 12 ? startYear : startYear + 1;
+  return `${year}-${String(m).padStart(2, "0")}`;
+}
+
+async function parseCsvRows() {
+  try {
+    const text = await fs.promises.readFile(CSV_PATH, "utf8");
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    const headerLine = lines.shift();
+    const headers = headerLine.split(",").map((h) => h.trim());
+    const rows = lines.map((line) => {
+      const cols = line.split(",").map((c) => c.trim());
+      const obj = {};
+      headers.forEach((h, i) => (obj[h] = cols[i] || ""));
+      // Map to our internal shape
+      const fin_year = obj["fin_year"] || obj["finYear"] || "";
+      const monthRaw = obj["month"] || obj["Month"] || "";
+      const month = finMonthToIso(fin_year, monthRaw) || monthRaw;
+      const state =
+        obj["state_name"] ||
+        obj["state"] ||
+        obj["state_name\r"] ||
+        obj["state_name\n"] ||
+        obj["state_name "] ||
+        "";
+      const district = obj["district_name"] || obj["district"] || "";
+      const households =
+        Number(
+          obj["Total_Households_Worked"] ||
+            obj["Total_Households_Worked\r"] ||
+            obj["Total_Individuals_Worked"] ||
+            0
+        ) || 0;
+      const workdays =
+        Number(
+          obj["Persondays_of_Central_Liability_so_far"] ||
+            obj["Persondays_of_Central_Liability_so_far\r"] ||
+            obj["Persondays_of_Central_Liability_so_far "] ||
+            0
+        ) || 0;
+      const wages =
+        Number(obj["Wages"] || obj["Wages\r"] || obj["Wages "] || 0) || 0;
+
+      return {
+        fin_year,
+        month,
+        state,
+        district,
+        households,
+        workdays,
+        wages,
+        raw: obj,
+      };
+    });
+    return rows;
+  } catch (err) {
+    console.error("CSV parse error:", err);
+    return [];
+  }
+}
 
 // Get all unique states
 router.get("/states", async (req, res) => {
@@ -12,6 +102,11 @@ router.get("/states", async (req, res) => {
       select: { state: true },
       orderBy: { state: "asc" },
     });
+    if (!result || result.length === 0) {
+      const rows = await parseCsvRows();
+      const states = Array.from(new Set(rows.map((r) => r.state))).sort();
+      return res.json(states);
+    }
     res.json(result.map((r) => r.state));
   } catch (err) {
     console.error(err);
@@ -29,6 +124,13 @@ router.get("/districts/:state", async (req, res) => {
       select: { district: true },
       orderBy: { district: "asc" },
     });
+    if (!result || result.length === 0) {
+      const rows = await parseCsvRows();
+      const districts = Array.from(
+        new Set(rows.filter((r) => r.state === state).map((r) => r.district))
+      ).sort();
+      return res.json(districts);
+    }
     res.json(result.map((r) => r.district));
   } catch (err) {
     console.error(err);
@@ -44,6 +146,11 @@ router.get("/districts", async (req, res) => {
       select: { district: true },
       orderBy: { district: "asc" },
     });
+    if (!result || result.length === 0) {
+      const rows = await parseCsvRows();
+      const districts = Array.from(new Set(rows.map((r) => r.district))).sort();
+      return res.json(districts);
+    }
     res.json(result.map((r) => r.district));
   } catch (err) {
     console.error(err);
@@ -60,6 +167,14 @@ router.get("/district/:name", async (req, res) => {
       orderBy: { month: "desc" },
       take: 12,
     });
+    if (!result || result.length === 0) {
+      const rows = await parseCsvRows();
+      const filtered = rows
+        .filter((r) => r.district === name)
+        .sort((a, b) => (b.month || "").localeCompare(a.month || ""))
+        .slice(0, 12);
+      return res.json(filtered);
+    }
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -75,6 +190,13 @@ router.get("/data/:state/:district", async (req, res) => {
       where: { state, district },
       orderBy: { month: "desc" },
     });
+    if (!result || result.length === 0) {
+      const rows = await parseCsvRows();
+      const filtered = rows
+        .filter((r) => r.state === state && r.district === district)
+        .sort((a, b) => (b.month || "").localeCompare(a.month || ""));
+      return res.json(filtered);
+    }
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -86,6 +208,25 @@ router.get("/data/:state/:district", async (req, res) => {
 router.get("/summary", async (req, res) => {
   try {
     const data = await prisma.mgnregaData.findMany();
+    if (!data || data.length === 0) {
+      const rows = await parseCsvRows();
+      const uniqueStates = new Set(rows.map((d) => d.state)).size;
+      const uniqueDistricts = new Set(rows.map((d) => d.district)).size;
+      const totalHouseholds = rows.reduce(
+        (sum, d) => sum + (d.households || 0),
+        0
+      );
+      const totalWorkdays = rows.reduce((sum, d) => sum + (d.workdays || 0), 0);
+      const totalWages = rows.reduce((sum, d) => sum + (d.wages || 0), 0);
+
+      return res.json({
+        total_states: uniqueStates,
+        total_districts: uniqueDistricts,
+        total_households: totalHouseholds,
+        total_workdays: totalWorkdays,
+        total_wages: totalWages,
+      });
+    }
     const uniqueStates = new Set(data.map((d) => d.state)).size;
     const uniqueDistricts = new Set(data.map((d) => d.district)).size;
     const totalHouseholds = data.reduce((sum, d) => sum + d.households, 0);

@@ -2,11 +2,8 @@ import fs from "fs";
 import path from "path";
 import { prisma } from "./db.js";
 
-const CSV_PATH = path.join(
-  new URL(import.meta.url).pathname,
-  "..",
-  "govproject dataset.csv"
-);
+// Use a safe path that works even when the workspace path contains spaces
+const CSV_PATH = path.resolve(process.cwd(), "govproject dataset.csv");
 
 const monthMap = {
   jan: 1,

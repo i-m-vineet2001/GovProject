@@ -3,7 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // Switched to SQLite for local dev seeding. This is reversible.
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
