@@ -1,0 +1,38 @@
+# Render manifest for deploying backend + managed Postgres
+# Review before using. This manifest defines a web service for the backend
+# and a managed PostgreSQL instance. After importing this repo in Render,
+# you'll still be prompted to confirm/create the database and provide any
+# secrets.
+
+version: 2
+
+services:
+  - type: web
+    name: govproject-backend
+    env: node
+    region: oregon
+    plan: free
+    repo: i-m-vineet2001/GovProject
+    branch: main
+    # Path points to the backend folder so Render runs npm in that dir
+    path: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # DATABASE_URL will be set from the managed database below when you
+      # create the DB through Render UI. You can also fill this in manually.
+
+databases:
+  - name: govproject-db
+    engine: postgres
+    plan: starter
+    region: oregon
+# Notes:
+# - After importing this manifest into Render, go to the service's "Environment"
+#   section and set DATABASE_URL to the connection string of the created
+#   postgres instance (Render provides it under the DB's "Connection Details").
+# - The startCommand runs `npx prisma migrate deploy` then `node server.js`.
+#   That will apply migrations on startup. For one-off CSV seeding, use the
+#   Render shell/console to run: `npm run seed:csv` in the backend directory.

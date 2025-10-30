@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "seed:csv": "node ./seedCsvToPrisma.js"
+    "seed:csv": "node ./seedCsvToPrisma.js",
+    "postinstall": "npx prisma generate",
+    "start": "npx prisma migrate deploy && node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
